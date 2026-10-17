@@ -17,7 +17,12 @@ fn setup(mut cmd: Commands) {
         Outline
         --
         #Ground
-        Mesh3d(asset_value(Plane3d::new(Vec3::Y, vec2(16.0, 16.0))))
+        Transform {
+            translation: Vec3 {
+                y: -0.05
+            }
+        }
+        Mesh3d(asset_value(Cuboid::new(16.0, 0.1, 16.0)))
         MeshMaterial3d<StandardMaterial>(asset_value(StandardMaterial::default()))
         Outline
     });
@@ -27,10 +32,19 @@ fn camera() -> impl Scene {
     bsn! {
         #Camera
         Camera3d
+        AtmosphereSettings
+        Smaa
+        Msaa::Off
+
+        Bloom {
+            intensity: 0.05,
+            ..Bloom::NATURAL
+        }
         Projection::Perspective(PerspectiveProjection {
             fov: {70f32.to_radians()},
         })
-        AtmosphereSettings
+
+
         Transform::from_xyz(0.0, 6.0, 12.0).looking_to(vec3(0.0, -0.333, -1.0).normalize(), Vec3::Y)
         FreeCamera
     }

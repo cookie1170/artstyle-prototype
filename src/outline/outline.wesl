@@ -11,7 +11,7 @@ fn vertex(in: Vertex) -> VertexOutput {
 
     let normal = vertex.normal;
     var pos = vertex.position;
-    pos *= 1.05;
+    pos += normalize(pos) * 0.1;
     let world_from_local = mesh::get_world_from_local(i);
     let clip_pos = mesh::mesh_position_local_to_clip(world_from_local, vec4(pos, 1));
     var out: VertexOutput;

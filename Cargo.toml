@@ -1,0 +1,106 @@
+[workspace.dependencies]
+bevy = {
+  version = "0.20",
+  default-features = false,
+  features = ["3d", "free_camera"],
+}
+rand = "0.10"
+tiny_bail = "0.7.0"
+
+[package]
+name = "artstyle-prototype"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bevy.workspace = true
+rand.workspace = true
+tiny_bail.workspace = true
+tracing = {
+  version = "0.1",
+  # compile out low-severity logs to improve performance
+  features = [
+    "max_level_debug",
+    "release_max_level_warn",
+  ]
+}
+
+[features]
+# default to a native dev build
+default = ["dev_native"]
+dev = [
+  "bevy/bevy_dev_tools",
+  "bevy/render_dev_tools",
+  "bevy/bevy_ui_debug",
+  "bevy/debug",
+  # improve compile times for dev builds by linking bevy as a dynamic library
+  "bevy/dynamic_linking",
+  # improve error messages coming from Bevy
+  "bevy/track_location",
+]
+dev_native = [
+  # enable embedded asset hot reloading for native dev builds
+  "bevy/embedded_watcher",
+  # enable asset hot reloading for native dev builds
+  "bevy/file_watcher",
+  "dev",
+]
+# hotpatching via the dioxus cli:
+# `dx serve --hot-patch --features hotpatching`
+hotpatching = ["bevy/hotpatching"]
+
+# enable a small amount of optimization in the dev profile
+[profile.dev]
+opt-level = 1
+
+# enable a large amount of optimization in the dev profile for dependencies
+[profile.dev.package."*"]
+opt-level = 3
+
+# remove expensive debug assertions due to <https://github.com/bevyengine/bevy/issues/14291>
+[profile.dev.package.wgpu-types]
+debug-assertions = false
+
+# this profile will be used by `bevy run web` automatically
+[profile.web-release]
+# default to release profile values
+inherits = "release"
+# optimize with size in mind (also try "z", sometimes it is better)
+# slightly slows compile times, great improvements to file size and runtime performance
+opt-level = "s"
+# strip all debugging information from the binary to slightly reduce file size
+strip = "debuginfo"
+
+# required for wasm to work
+[target.wasm32-unknown-unknown.dependencies]
+getrandom = { version = "0.3", features = ["wasm_js"] }
+
+[workspace.lints.clippy]
+# bevy supplies arguments to systems via dependency injection, so it's natural for systems to
+# request more than 7 arguments, which would undesirably trigger this lint
+too_many_arguments = "allow"
+# queries may access many components, which would undesirably trigger this lint
+type_complexity = "allow"
+
+[workspace.lints.rust]
+# mark `bevy_lint` as a valid `cfg`, as it is set when the bevy linter runs
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(bevy_lint)"] }
+
+[lints]
+workspace = true
+
+[package.metadata.bevy_cli.release]
+# disable dev features for release builds
+default-features = false
+
+[package.metadata.bevy_cli.web]
+# disable native features for web builds
+default-features = false
+
+[package.metadata.bevy_cli.web.dev]
+features = ["dev"]
+
+[package.metadata.bevy_lint]
+panicking_methods = "deny"
+pedantic = "warn"

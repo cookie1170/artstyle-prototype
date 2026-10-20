@@ -14,7 +14,6 @@ fn setup(mut cmd: Commands) {
         }
         Mesh3d(asset_value(Cuboid::new(3.0, 3.0, 3.0)))
         MeshMaterial3d<StandardMaterial>(asset_value(StandardMaterial::default()))
-        Outline
         --
         #Ground
         Transform {
@@ -24,7 +23,6 @@ fn setup(mut cmd: Commands) {
         }
         Mesh3d(asset_value(Cuboid::new(16.0, 0.1, 16.0)))
         MeshMaterial3d<StandardMaterial>(asset_value(StandardMaterial::default()))
-        Outline
     });
 }
 
@@ -36,6 +34,7 @@ fn camera() -> impl Scene {
         Smaa
         Msaa::Off
 
+        Hdr
         Bloom {
             intensity: 0.05,
             ..Bloom::NATURAL
@@ -74,6 +73,9 @@ pub(super) fn plugin(app: &mut App) {
     app.add_systems(Startup, setup);
 }
 
-use bevy::camera_controller::free_camera::{FreeCamera, FreeCameraPlugin};
+use bevy::{
+    camera::Hdr,
+    camera_controller::free_camera::{FreeCamera, FreeCameraPlugin},
+};
 
-use crate::{outline::Outline, prelude::*};
+use crate::prelude::*;

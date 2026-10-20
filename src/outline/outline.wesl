@@ -1,26 +1,11 @@
-import bevy_pbr::render::{mesh_functions as mesh, forward_io::{Vertex, decompress_vertex}};
+import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput;
 
-struct VertexOutput {
-    @builtin(position) position: vec4f,
-}
-
-@vertex
-fn vertex(in: Vertex) -> VertexOutput {
-    let i = in.instance_index;
-    let vertex = decompress_vertex(in, i);
-
-    let normal = vertex.normal;
-    var pos = vertex.position;
-    pos += normalize(pos) * 0.1;
-    let world_from_local = mesh::get_world_from_local(i);
-    let clip_pos = mesh::mesh_position_local_to_clip(world_from_local, vec4(pos, 1));
-    var out: VertexOutput;
-    out.position = clip_pos;
-
-    return out;
-}
+@group(0) @binding(0)
+var screen_texture: texture_2d<f32>;
+@group(0) @binding(1)
+var screen_sampler: sampler;
 
 @fragment
-fn fragment() -> @location(0) vec4f {
-    return vec4(vec3(0), 1);
+fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4f {
+    return textureSample(screen_texture, screen_sampler, in.uv);
 }

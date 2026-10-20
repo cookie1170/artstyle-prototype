@@ -6,7 +6,7 @@ var depth_texture: texture_depth_2d;
 
 @fragment
 fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4f {
-    let pos = vec2<u32>(vec2<f32>(textureDimensions(depth_texture)) * in.uv);
+    let pos = vec2u(vec2f(textureDimensions(depth_texture)) * in.uv);
     var depth = textureLoad(depth_texture, pos, 0);
     depth = depth;
     let out = select(in.uv.rg, null_pos, depth < 0.0001);

@@ -5,31 +5,43 @@ pub struct OutlineConfig {}
 
 fn render_outline(
     view: ViewQuery<(&ViewTarget, &ViewDepthStencilTexture)>,
-    pipeline: If<Res<OutlinePipelines>>,
+    pipelines: If<Res<OutlinePipelines>>,
     pipeline_cache: Res<PipelineCache>,
-    data: If<Res<OutlineConfig>>,
-    fallback_buffer: Res<FallbackBuffer>,
-    shader_buffer_assets: Res<RenderAssets<GpuShaderBuffer>>,
-    mut param: SystemParamItem<<OutlineConfig as AsBindGroup>::Param>,
+    // data: If<Res<OutlineConfig>>,
+    // fallback_buffer: Res<FallbackBuffer>,
+    // shader_buffer_assets: Res<RenderAssets<GpuShaderBuffer>>,
+    // mut param: SystemParamItem<<OutlineConfig as AsBindGroup>::Param>,
     mut ctx: RenderContext,
 ) -> Result {
     let (view_target, view_depth) = view.into_inner();
-    let write = view_target.post_process_write();
-    let layout = &pipeline_cache.get_bind_group_layout(&pipeline.init.layout);
-    let mut bind_group_builder = BindGroupBuilder::default();
-    match data.build_bind_group(
-        layout,
-        ctx.render_device(),
-        &mut param,
-        false,
-        &mut bind_group_builder,
-    ) {
-        Ok(()) => {}
-        Err(AsBindGroupError::RetryNextUpdate) => return Ok(()),
-        e => e.context("failed to create outline bind group")?,
-    }
+    // let write = view_target.post_process_write();
+    let layout = &pipeline_cache.get_bind_group_layout(&pipelines.init.layout);
+    let desc_a = TextureDescriptor {
+        label: Some("outline_a"),
+        size: view_target.main_texture().size(),
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba16Float,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
+        view_formats: &[TextureFormat::Rgba16Float],
+    };
+    let texture_a = ctx.render_device().create_texture(&desc_a);
+    // let texture_b = ctx.render_device().create_texture(&TextureDescriptor {
+    //     label: Some("outline_b"),
+    //     ..desc_a
+    // });
 
-    let mut entries = BindGroupEntries::single(
+    let texture_a_view = texture_a.create_view(&TextureViewDescriptor {
+        label: Some("outline_a_view"),
+        ..default()
+    });
+    // let texture_b_view = texture_b.create_view(&TextureViewDescriptor {
+    //     label: Some("outline_b_view"),
+    //     ..default()
+    // });
+
+    let entries = BindGroupEntries::single(
         view_depth
             .attachment
             .depth_stencil_views()
@@ -37,41 +49,74 @@ fn render_outline(
     )
     .to_vec();
 
-    entries.extend(
-        bind_group_builder
-            .binding_resources
-            .iter()
-            .map(|(index, binding)| BindGroupEntry {
-                binding: *index,
-                resource: binding.get_binding(&fallback_buffer, &shader_buffer_assets),
-            }),
-    );
-
     let bind_group =
         ctx.render_device()
             .create_bind_group(OutlineConfig::label(), layout, &entries);
 
-    let mut pass = ctx
+    let mut init_pass = ctx
         .command_encoder()
         .begin_render_pass(&RenderPassDescriptor {
             label: Some("outline_init_pass"),
             color_attachments: &[Some(RenderPassColorAttachment {
-                view: write.destination,
+                view: &texture_a_view,
                 depth_slice: None,
                 resolve_target: None,
                 ops: Operations::default(),
             })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
+            ..default()
         });
 
-    let pipeline = rq!(Ok(()), pipeline_cache.get_render_pipeline(pipeline.init.id));
+    let pipeline = rq!(
+        Ok(()),
+        pipeline_cache.get_render_pipeline(pipelines.init.id)
+    );
 
-    pass.set_pipeline(pipeline);
-    pass.set_bind_group(0, &bind_group, &[]);
-    pass.draw(0..3, 0..1);
+    init_pass.set_pipeline(pipeline);
+    init_pass.set_bind_group(0, &bind_group, &[]);
+    init_pass.draw(0..3, 0..1);
+    drop(init_pass);
+
+    let layout = &pipeline_cache.get_bind_group_layout(&pipelines.jumpflood.layout);
+    let uniform_buffer = ctx
+        .render_device()
+        .create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("step_width_buffer"),
+            contents: &[1],
+            usage: BufferUsages::UNIFORM,
+        });
+
+    let entries = BindGroupEntries::sequential((
+        &texture_a_view,
+        BufferBinding {
+            buffer: &uniform_buffer,
+            offset: 0,
+            size: None,
+        },
+    ))
+    .to_vec();
+
+    let bind_group =
+        ctx.render_device()
+            .create_bind_group(OutlineConfig::label(), layout, &entries);
+    let mut jumpflood_pass = ctx
+        .command_encoder()
+        .begin_render_pass(&RenderPassDescriptor {
+            label: Some("outline_jumpflood_pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &view_target.post_process_write().destination,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations::default(),
+            })],
+            ..default()
+        });
+    let pipeline = rq!(
+        Ok(()),
+        pipeline_cache.get_render_pipeline(pipelines.jumpflood.id)
+    );
+    jumpflood_pass.set_pipeline(pipeline);
+    jumpflood_pass.set_bind_group(0, &bind_group, &[]);
+    jumpflood_pass.draw(0..3, 0..1);
 
     Ok(())
 }
@@ -79,6 +124,7 @@ fn render_outline(
 #[derive(Resource, Debug, Clone)]
 struct OutlinePipelines {
     init: OutlinePipeline,
+    jumpflood: OutlinePipeline,
 }
 
 #[derive(Debug, Clone)]
@@ -129,12 +175,52 @@ fn init_outline_pipeline(
 
         OutlinePipeline { layout, id }
     };
-    cmd.insert_resource(OutlinePipelines { init });
+
+    let jumpflood = {
+        let extra_entries = BindGroupLayoutEntries::sequential(
+            ShaderStages::FRAGMENT,
+            (
+                texture_2d(TextureSampleType::Float { filterable: false }),
+                uniform_buffer::<i32>(false),
+            ),
+        )
+        .to_vec();
+        let entries = OutlineConfig::bind_group_layout_entries(ctx.render_device(), false);
+        let entries =
+            combined_bind_group::combine_bind_group_layout_entries(extra_entries, entries);
+
+        let layout = BindGroupLayoutDescriptor {
+            label: OutlineConfig::label().into(),
+            entries,
+        };
+
+        let shader = load_embedded_asset!(&*assets, "outline_jumpflood.wesl");
+        let vertex = fullscreen_shader.to_vertex_state();
+        let id = cache.queue_render_pipeline(RenderPipelineDescriptor {
+            label: Some("outline_jumpflood_pipeline".into()),
+            layout: vec![layout.clone()],
+            vertex,
+            fragment: Some(FragmentState {
+                shader,
+                targets: vec![Some(ColorTargetState {
+                    format: TextureFormat::Rgba16Float,
+                    blend: None,
+                    write_mask: ColorWrites::ALL,
+                })],
+                ..default()
+            }),
+            ..default()
+        });
+
+        OutlinePipeline { layout, id }
+    };
+    cmd.insert_resource(OutlinePipelines { init, jumpflood });
 }
 
 pub(super) fn plugin(app: &mut App) {
     load_shader_library!(app, "outline_common.wesl");
     embedded_asset!(app, "outline_init.wesl");
+    embedded_asset!(app, "outline_jumpflood.wesl");
 
     app.init_resource::<OutlineConfig>()
         .add_plugins(ExtractResourcePlugin::<OutlineConfig, RenderApp>::default());
@@ -151,7 +237,6 @@ pub(super) fn plugin(app: &mut App) {
 use bevy::{
     asset::load_embedded_asset,
     core_pipeline::{Core3d, Core3dSystems, FullscreenShader},
-    ecs::system::SystemParamItem,
     extract::extract_resource::ExtractResourcePlugin,
     material::descriptor::{
         BindGroupLayoutDescriptor, CachedRenderPipelineId, FragmentState, RenderPipelineDescriptor,
@@ -159,16 +244,15 @@ use bevy::{
     render::{
         RenderApp, RenderStartup, combined_bind_group,
         extract_resource::ExtractResource,
-        material_bind_groups::FallbackBuffer,
-        render_asset::RenderAssets,
         render_resource::{
-            AsBindGroupError, BindGroupBuilder, BindGroupEntries, BindGroupEntry,
-            BindGroupLayoutEntries, ColorTargetState, ColorWrites, Operations, PipelineCache,
-            RenderPassColorAttachment, RenderPassDescriptor, ShaderStages, TextureFormat,
-            TextureSampleType, binding_types::texture_2d,
+            BindGroupEntries, BindGroupLayoutEntries, BufferBinding, BufferInitDescriptor,
+            BufferUsages, ColorTargetState, ColorWrites, Operations, PipelineCache,
+            RenderPassColorAttachment, RenderPassDescriptor, ShaderStages, TextureDescriptor,
+            TextureDimension, TextureFormat, TextureSampleType, TextureUsages,
+            TextureViewDescriptor,
+            binding_types::{texture_2d, uniform_buffer},
         },
         renderer::{RenderContext, ViewQuery},
-        storage::GpuShaderBuffer,
         view::{ViewDepthStencilTexture, ViewTarget},
     },
     shader::load_shader_library,

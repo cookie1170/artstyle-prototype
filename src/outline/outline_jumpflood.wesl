@@ -1,5 +1,5 @@
 import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput;
-import super::outline_common::{null_pos, unpack_depth, uv_to_pos};
+import super::outline_common::{is_null, null_pos, unpack_depth, uv_to_pos};
 
 @group(0) @binding(0)
 var texture: texture_2d<u32>;
@@ -15,7 +15,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4f {
     let current_pos = value.rg;
     let depth = unpack_depth(value.ba);
     // only visualise the pixels added by the flood
-    if all(current_pos != null_pos) {
+    if !is_null(current_pos) {
         return vec4(vec3(depth), 1.0);
     }
 
@@ -29,7 +29,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4f {
             let test_pos = textureLoad(texture, sample_pos, 0).rg;
             let diff = pos - test_pos;
             let sqr_dist = dot(diff, diff);
-            if all(test_pos != null_pos) && sqr_dist < best_dist {
+            if !is_null(test_pos) && sqr_dist < best_dist {
                 best_pos = test_pos;
                 best_dist = sqr_dist;
             }

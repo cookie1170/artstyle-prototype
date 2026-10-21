@@ -5,6 +5,10 @@ fn uv_to_pos(uv: vec2f, dim: vec2u) -> vec2u {
     return vec2u(uv * vec2f(dim));
 }
 
+fn is_null(pos: vec2u) -> bool {
+    return all(pos == null_pos);
+}
+
 /// packs the `depth` value into two `u32`s ranging from `0` to `65535`
 fn pack_depth(depth: f32) -> vec2u {
     let as_u32 = u32(depth * u32_max);

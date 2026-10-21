@@ -1,4 +1,4 @@
-const null_pos: vec2u = vec2(0);
+const null_pos: vec2u = vec2(65535);
 const u32_max = 4294967295; // 2 ** 32 - 1
 
 fn uv_to_pos(uv: vec2f, dim: vec2u) -> vec2u {

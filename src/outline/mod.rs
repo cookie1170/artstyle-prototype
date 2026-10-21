@@ -7,14 +7,9 @@ fn render_outline(
     view: ViewQuery<(&ViewTarget, &ViewDepthStencilTexture)>,
     pipelines: If<Res<OutlinePipelines>>,
     pipeline_cache: Res<PipelineCache>,
-    // data: If<Res<OutlineConfig>>,
-    // fallback_buffer: Res<FallbackBuffer>,
-    // shader_buffer_assets: Res<RenderAssets<GpuShaderBuffer>>,
-    // mut param: SystemParamItem<<OutlineConfig as AsBindGroup>::Param>,
     mut ctx: RenderContext,
 ) -> Result {
     let (view_target, view_depth) = view.into_inner();
-    // let write = view_target.post_process_write();
     let layout = &pipeline_cache.get_bind_group_layout(&pipelines.init.layout);
     let desc_a = TextureDescriptor {
         label: Some("outline_a"),
@@ -27,19 +22,19 @@ fn render_outline(
         view_formats: &[TextureFormat::Rgba16Uint],
     };
     let texture_a = ctx.render_device().create_texture(&desc_a);
-    // let texture_b = ctx.render_device().create_texture(&TextureDescriptor {
-    //     label: Some("outline_b"),
-    //     ..desc_a
-    // });
+    let texture_b = ctx.render_device().create_texture(&TextureDescriptor {
+        label: Some("outline_b"),
+        ..desc_a
+    });
 
     let texture_a_view = texture_a.create_view(&TextureViewDescriptor {
         label: Some("outline_a_view"),
         ..default()
     });
-    // let texture_b_view = texture_b.create_view(&TextureViewDescriptor {
-    //     label: Some("outline_b_view"),
-    //     ..default()
-    // });
+    let texture_b_view = texture_b.create_view(&TextureViewDescriptor {
+        label: Some("outline_b_view"),
+        ..default()
+    });
 
     let entries = BindGroupEntries::single(
         view_depth
@@ -76,34 +71,68 @@ fn render_outline(
     init_pass.draw(0..3, 0..1);
     drop(init_pass);
 
-    let layout = &pipeline_cache.get_bind_group_layout(&pipelines.jumpflood.layout);
-    let uniform_buffer = ctx
-        .render_device()
-        .create_buffer_with_data(&BufferInitDescriptor {
-            label: Some("step_width_buffer"),
-            contents: &[1],
-            usage: BufferUsages::UNIFORM,
-        });
+    const STEPS: u32 = 2;
+    let mut read_buffer = &texture_a_view;
+    let mut write_buffer = &texture_b_view;
+    for i in (0..STEPS).rev() {
+        let layout = &pipeline_cache.get_bind_group_layout(&pipelines.jumpflood.layout);
+        let uniform_buffer = ctx
+            .render_device()
+            .create_buffer_with_data(&BufferInitDescriptor {
+                label: Some("step_width_buffer"),
+                contents: &2u32.pow(i).to_ne_bytes(),
+                usage: BufferUsages::UNIFORM,
+            });
 
-    let entries = BindGroupEntries::sequential((
-        &texture_a_view,
-        BufferBinding {
-            buffer: &uniform_buffer,
-            offset: 0,
-            size: None,
-        },
-    ))
-    .to_vec();
+        let entries = BindGroupEntries::sequential((
+            read_buffer,
+            BufferBinding {
+                buffer: &uniform_buffer,
+                offset: 0,
+                size: None,
+            },
+        ))
+        .to_vec();
+
+        let bind_group =
+            ctx.render_device()
+                .create_bind_group(OutlineConfig::label(), layout, &entries);
+        let mut jumpflood_pass = ctx
+            .command_encoder()
+            .begin_render_pass(&RenderPassDescriptor {
+                label: Some("outline_jumpflood_pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: write_buffer,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations::default(),
+                })],
+                ..default()
+            });
+        let pipeline = rq!(
+            Ok(()),
+            pipeline_cache.get_render_pipeline(pipelines.jumpflood.id)
+        );
+        jumpflood_pass.set_pipeline(pipeline);
+        jumpflood_pass.set_bind_group(0, &bind_group, &[]);
+        jumpflood_pass.draw(0..3, 0..1);
+        std::mem::swap(&mut read_buffer, &mut write_buffer);
+    }
+
+    let layout = &pipeline_cache.get_bind_group_layout(&pipelines.draw.layout);
+
+    let entries = BindGroupEntries::single(read_buffer).to_vec();
 
     let bind_group =
         ctx.render_device()
             .create_bind_group(OutlineConfig::label(), layout, &entries);
-    let mut jumpflood_pass = ctx
+
+    let mut draw_pass = ctx
         .command_encoder()
         .begin_render_pass(&RenderPassDescriptor {
-            label: Some("outline_jumpflood_pass"),
+            label: Some("outline_draw_pass"),
             color_attachments: &[Some(RenderPassColorAttachment {
-                view: &view_target.post_process_write().destination,
+                view: view_target.post_process_write().destination,
                 depth_slice: None,
                 resolve_target: None,
                 ops: Operations::default(),
@@ -112,11 +141,11 @@ fn render_outline(
         });
     let pipeline = rq!(
         Ok(()),
-        pipeline_cache.get_render_pipeline(pipelines.jumpflood.id)
+        pipeline_cache.get_render_pipeline(pipelines.draw.id)
     );
-    jumpflood_pass.set_pipeline(pipeline);
-    jumpflood_pass.set_bind_group(0, &bind_group, &[]);
-    jumpflood_pass.draw(0..3, 0..1);
+    draw_pass.set_pipeline(pipeline);
+    draw_pass.set_bind_group(0, &bind_group, &[]);
+    draw_pass.draw(0..3, 0..1);
 
     Ok(())
 }
@@ -125,6 +154,7 @@ fn render_outline(
 struct OutlinePipelines {
     init: OutlinePipeline,
     jumpflood: OutlinePipeline,
+    draw: OutlinePipeline,
 }
 
 #[derive(Debug, Clone)]
@@ -134,21 +164,17 @@ struct OutlinePipeline {
 }
 
 fn init_outline_pipeline(
-    ctx: RenderContext,
     assets: Res<AssetServer>,
     fullscreen_shader: Res<FullscreenShader>,
     cache: ResMut<PipelineCache>,
     mut cmd: Commands,
 ) {
     let init = {
-        let extra_entries = BindGroupLayoutEntries::single(
+        let entries = BindGroupLayoutEntries::single(
             ShaderStages::FRAGMENT,
             texture_2d(TextureSampleType::Depth),
         )
         .to_vec();
-        let entries = OutlineConfig::bind_group_layout_entries(ctx.render_device(), false);
-        let entries =
-            combined_bind_group::combine_bind_group_layout_entries(extra_entries, entries);
 
         let layout = BindGroupLayoutDescriptor {
             label: OutlineConfig::label().into(),
@@ -177,7 +203,7 @@ fn init_outline_pipeline(
     };
 
     let jumpflood = {
-        let extra_entries = BindGroupLayoutEntries::sequential(
+        let entries = BindGroupLayoutEntries::sequential(
             ShaderStages::FRAGMENT,
             (
                 texture_2d(TextureSampleType::Uint),
@@ -185,9 +211,6 @@ fn init_outline_pipeline(
             ),
         )
         .to_vec();
-        let entries = OutlineConfig::bind_group_layout_entries(ctx.render_device(), false);
-        let entries =
-            combined_bind_group::combine_bind_group_layout_entries(extra_entries, entries);
 
         let layout = BindGroupLayoutDescriptor {
             label: OutlineConfig::label().into(),
@@ -198,6 +221,39 @@ fn init_outline_pipeline(
         let vertex = fullscreen_shader.to_vertex_state();
         let id = cache.queue_render_pipeline(RenderPipelineDescriptor {
             label: Some("outline_jumpflood_pipeline".into()),
+            layout: vec![layout.clone()],
+            vertex,
+            fragment: Some(FragmentState {
+                shader,
+                targets: vec![Some(ColorTargetState {
+                    format: TextureFormat::Rgba16Uint,
+                    blend: None,
+                    write_mask: ColorWrites::ALL,
+                })],
+                ..default()
+            }),
+            ..default()
+        });
+
+        OutlinePipeline { layout, id }
+    };
+
+    let draw = {
+        let entries = BindGroupLayoutEntries::single(
+            ShaderStages::FRAGMENT,
+            texture_2d(TextureSampleType::Uint),
+        )
+        .to_vec();
+
+        let layout = BindGroupLayoutDescriptor {
+            label: OutlineConfig::label().into(),
+            entries,
+        };
+
+        let shader = load_embedded_asset!(&*assets, "outline_draw.wesl");
+        let vertex = fullscreen_shader.to_vertex_state();
+        let id = cache.queue_render_pipeline(RenderPipelineDescriptor {
+            label: Some("outline_draw_pipeline".into()),
             layout: vec![layout.clone()],
             vertex,
             fragment: Some(FragmentState {
@@ -214,13 +270,19 @@ fn init_outline_pipeline(
 
         OutlinePipeline { layout, id }
     };
-    cmd.insert_resource(OutlinePipelines { init, jumpflood });
+
+    cmd.insert_resource(OutlinePipelines {
+        init,
+        jumpflood,
+        draw,
+    });
 }
 
 pub(super) fn plugin(app: &mut App) {
     load_shader_library!(app, "outline_common.wesl");
     embedded_asset!(app, "outline_init.wesl");
     embedded_asset!(app, "outline_jumpflood.wesl");
+    embedded_asset!(app, "outline_draw.wesl");
 
     app.init_resource::<OutlineConfig>()
         .add_plugins(ExtractResourcePlugin::<OutlineConfig, RenderApp>::default());
@@ -242,7 +304,7 @@ use bevy::{
         BindGroupLayoutDescriptor, CachedRenderPipelineId, FragmentState, RenderPipelineDescriptor,
     },
     render::{
-        RenderApp, RenderStartup, combined_bind_group,
+        RenderApp, RenderStartup,
         extract_resource::ExtractResource,
         render_resource::{
             BindGroupEntries, BindGroupLayoutEntries, BufferBinding, BufferInitDescriptor,

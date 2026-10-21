@@ -22,9 +22,9 @@ fn render_outline(
         mip_level_count: 1,
         sample_count: 1,
         dimension: TextureDimension::D2,
-        format: TextureFormat::Rgba16Float,
+        format: TextureFormat::Rgba16Uint,
         usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
-        view_formats: &[TextureFormat::Rgba16Float],
+        view_formats: &[TextureFormat::Rgba16Uint],
     };
     let texture_a = ctx.render_device().create_texture(&desc_a);
     // let texture_b = ctx.render_device().create_texture(&TextureDescriptor {
@@ -164,7 +164,7 @@ fn init_outline_pipeline(
             fragment: Some(FragmentState {
                 shader,
                 targets: vec![Some(ColorTargetState {
-                    format: TextureFormat::Rgba16Float,
+                    format: TextureFormat::Rgba16Uint,
                     blend: None,
                     write_mask: ColorWrites::ALL,
                 })],
@@ -180,7 +180,7 @@ fn init_outline_pipeline(
         let extra_entries = BindGroupLayoutEntries::sequential(
             ShaderStages::FRAGMENT,
             (
-                texture_2d(TextureSampleType::Float { filterable: false }),
+                texture_2d(TextureSampleType::Uint),
                 uniform_buffer::<i32>(false),
             ),
         )

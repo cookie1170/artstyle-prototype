@@ -1,5 +1,5 @@
 import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput;
-import super::outline_common::{null_pos, uv_to_pos};
+import super::outline_common::{null_pos, unpack_depth, uv_to_pos};
 
 @group(0) @binding(0)
 var texture: texture_2d<u32>;
@@ -11,10 +11,12 @@ var<uniform> step_width: i32;
 fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4f {
     let dim = textureDimensions(texture);
     let pos = uv_to_pos(in.uv, dim);
-    let current_pos = textureLoad(texture, pos, 0).rg;
+    let value = textureLoad(texture, pos, 0);
+    let current_pos = value.rg;
+    let depth = unpack_depth(value.ba);
     // only visualise the pixels added by the flood
-    if all(current_pos.xy != null_pos) {
-        return vec4(0);
+    if all(current_pos != null_pos) {
+        return vec4(vec3(depth), 1.0);
     }
 
     // big number
@@ -34,5 +36,6 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4f {
         }
     }
 
-    return vec4(vec2f(best_pos) / vec2f(dim), 0, 0);
+    // TEMP: divide it by `dim` because currently we're just displaying it to the screen.
+    return vec4(vec2f(best_pos) / vec2f(dim), 0.0, 1.0);
 }

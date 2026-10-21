@@ -121,7 +121,8 @@ fn render_outline(
 
     let layout = &pipeline_cache.get_bind_group_layout(&pipelines.draw.layout);
 
-    let entries = BindGroupEntries::single(read_buffer).to_vec();
+    let write = view_target.post_process_write();
+    let entries = BindGroupEntries::sequential((read_buffer, write.source)).to_vec();
 
     let bind_group =
         ctx.render_device()
@@ -132,7 +133,7 @@ fn render_outline(
         .begin_render_pass(&RenderPassDescriptor {
             label: Some("outline_draw_pass"),
             color_attachments: &[Some(RenderPassColorAttachment {
-                view: view_target.post_process_write().destination,
+                view: write.destination,
                 depth_slice: None,
                 resolve_target: None,
                 ops: Operations::default(),
@@ -239,9 +240,12 @@ fn init_outline_pipeline(
     };
 
     let draw = {
-        let entries = BindGroupLayoutEntries::single(
+        let entries = BindGroupLayoutEntries::sequential(
             ShaderStages::FRAGMENT,
-            texture_2d(TextureSampleType::Uint),
+            (
+                texture_2d(TextureSampleType::Uint),
+                texture_2d(TextureSampleType::Float { filterable: false }),
+            ),
         )
         .to_vec();
 

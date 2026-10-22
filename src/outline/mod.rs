@@ -4,12 +4,13 @@
 pub struct OutlineConfig {}
 
 fn render_outline(
-    view: ViewQuery<(&ViewTarget, &ViewDepthStencilTexture)>,
+    view: ViewQuery<(&ViewTarget, &ViewUniformOffset, &ViewDepthStencilTexture)>,
+    view_uniforms: If<Res<ViewUniforms>>,
     pipelines: If<Res<OutlinePipelines>>,
     pipeline_cache: Res<PipelineCache>,
     mut ctx: RenderContext,
 ) -> Result {
-    let (view_target, view_depth) = view.into_inner();
+    let (view_target, view_uniform_offset, view_depth) = view.into_inner();
     let layout = &pipeline_cache.get_bind_group_layout(&pipelines.init.layout);
     let desc_a = TextureDescriptor {
         label: Some("outline_a"),
@@ -70,6 +71,7 @@ fn render_outline(
     init_pass.set_bind_group(0, &bind_group, &[]);
     init_pass.draw(0..3, 0..1);
     drop(init_pass);
+    let view_buffer = rq!(Ok(()), view_uniforms.uniforms.buffer());
 
     const STEPS: u32 = 2;
     let mut read_buffer = &texture_a_view;
@@ -89,6 +91,11 @@ fn render_outline(
             BufferBinding {
                 buffer: &uniform_buffer,
                 offset: 0,
+                size: None,
+            },
+            BufferBinding {
+                buffer: &view_buffer,
+                offset: view_uniform_offset.offset as u64,
                 size: None,
             },
         ))
@@ -209,6 +216,7 @@ fn init_outline_pipeline(
             (
                 texture_2d(TextureSampleType::Uint),
                 uniform_buffer::<i32>(false),
+                uniform_buffer::<ViewUniform>(false),
             ),
         )
         .to_vec();
@@ -319,7 +327,7 @@ use bevy::{
             binding_types::{texture_2d, uniform_buffer},
         },
         renderer::{RenderContext, ViewQuery},
-        view::{ViewDepthStencilTexture, ViewTarget},
+        view::{ViewDepthStencilTexture, ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms},
     },
     shader::load_shader_library,
 };

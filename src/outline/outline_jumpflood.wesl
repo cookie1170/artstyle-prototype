@@ -1,4 +1,5 @@
 import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput;
+import bevy_render::view::View;
 import super::outline_common::{is_null, null_pos, unpack_depth, uv_to_pos};
 
 @group(0) @binding(0)
@@ -6,6 +7,9 @@ var texture: texture_2d<u32>;
 
 @group(0) @binding(1)
 var<uniform> step_width: i32;
+
+@group(0) @binding(2)
+var<uniform> view: View;
 
 @fragment
 fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4u {

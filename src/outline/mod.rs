@@ -156,13 +156,14 @@ struct OutlineRenderTarget {
 
 fn on_camera_added(
     ev: On<Add<Camera>>,
-    cam: Query<&Projection, Without<OutlineCameraOf>>,
+    cam: Query<(&Camera, &Projection), Without<OutlineCameraOf>>,
     mut cmd: Commands,
 ) {
-    let projection = rq!(cam.get(ev.entity));
+    let (camera, projection) = rq!(cam.get(ev.entity));
     cmd.spawn((
         Camera3d::default(),
         Camera {
+            order: camera.order - 1,
             msaa_writeback: MsaaWriteback::Off,
             clear_color: ClearColorConfig::Custom(Color::LinearRgba(LinearRgba::from_u8_array(
                 [0; 4],

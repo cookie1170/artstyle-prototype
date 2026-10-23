@@ -78,15 +78,15 @@ fn on_outline_id_added(
     let id = rq!(id.get(ev.entity));
     for child in children.iter_descendants(ev.entity) {
         let mesh = cq!(meshes.get(child));
-        cmd.entity(child)
-            .with_child((
-                mesh.clone(),
-                MeshMaterial3d(id.material.clone()),
-                UsesOutlineId(ev.entity),
-                ClearColor(Color::LinearRgba(LinearRgba::from_u8_array([0; 4]))),
-                OUTLINE_LAYER.clone(),
-            ))
-            .add_one_related::<OutlineMeshOf>(child);
+        cmd.spawn((
+            mesh.clone(),
+            MeshMaterial3d(id.material.clone()),
+            UsesOutlineId(ev.entity),
+            ClearColor(Color::LinearRgba(LinearRgba::from_u8_array([0; 4]))),
+            OUTLINE_LAYER.clone(),
+            ChildOf(child),
+            OutlineMeshOf(child),
+        ));
     }
 }
 
@@ -146,24 +146,30 @@ struct OutlineCameraOf(pub Entity);
 #[relationship_target(relationship = OutlineCameraOf)]
 struct WithOutlineCamera(Entity);
 
-fn on_camera_added(ev: On<Add<Camera>>, cam: Query<(&Camera, &Projection)>, mut cmd: Commands) {
-    let (cam, projection) = rq!(cam.get(ev.entity));
-    cmd.entity(ev.entity)
-        .with_child((cam.clone(), projection.clone()))
-        .add_one_related::<OutlineCameraOf>(ev.entity);
+fn on_camera_added(
+    ev: On<Add<Camera>>,
+    cam: Query<&Projection, Without<OutlineCameraOf>>,
+    mut cmd: Commands,
+) {
+    let projection = rq!(cam.get(ev.entity));
+    cmd.spawn((
+        Camera3d::default(),
+        Camera {
+            order: -1,
+            ..default()
+        },
+        projection.clone(),
+        OutlineCameraOf(ev.entity),
+        ChildOf(ev.entity),
+    ));
 }
 
 fn update_outline_cameras(
-    changed: Query<
-        (&Camera, &Projection, &WithOutlineCamera),
-        Or<(Changed<Camera>, Changed<Projection>)>,
-    >,
-    mut outline_cameras: Query<(&mut Camera, &mut Projection), Without<WithOutlineCamera>>,
+    changed: Query<(&Projection, &WithOutlineCamera), Or<(Changed<Camera>, Changed<Projection>)>>,
+    mut outline_cameras: Query<&mut Projection, Without<WithOutlineCamera>>,
 ) {
-    for (camera, projection, outline_camera) in changed {
-        let (mut outline_camera, mut outline_projection) =
-            cq!(outline_cameras.get_mut(**outline_camera));
-        *outline_camera = camera.clone();
+    for (projection, outline_camera) in changed {
+        let mut outline_projection = cq!(outline_cameras.get_mut(**outline_camera));
         *outline_projection = projection.clone();
     }
 }
@@ -194,7 +200,13 @@ pub(super) fn plugin(app: &mut App) {
         .add_observer(on_outline_id_added)
         .add_observer(on_outline_id_removed)
         .add_observer(on_camera_added)
-        .add_systems(PostUpdate, (update_changed_meshes, update_outline_cameras))
+        .add_systems(
+            PostUpdate,
+            (
+                update_changed_meshes.ambiguous_with_all(),
+                update_outline_cameras.ambiguous_with_all(),
+            ),
+        )
         .add_plugins(render::plugin);
 }
 

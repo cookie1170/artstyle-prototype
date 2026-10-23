@@ -4,6 +4,7 @@ fn render_outline(
     pipeline_cache: Res<PipelineCache>,
     mut ctx: RenderContext,
 ) -> Result {
+    return Ok(());
     let (view_target, view_depth) = view.into_inner();
     let layout = &pipeline_cache.get_bind_group_layout(&pipelines.init.layout);
     let desc_a = TextureDescriptor {
@@ -165,6 +166,7 @@ fn init_outline_pipeline(
     cache: ResMut<PipelineCache>,
     mut cmd: Commands,
 ) {
+    return;
     let init = {
         let entries = BindGroupLayoutEntries::single(
             ShaderStages::FRAGMENT,
@@ -283,13 +285,18 @@ pub struct OutlineMaterial {
     pub id: u32,
 }
 
-impl Material for OutlineMaterial {}
+impl Material for OutlineMaterial {
+    fn fragment_shader() -> ShaderRef {
+        "embedded://artstyle_prototype/outline/render/outline_mesh.wesl".into()
+    }
+}
 
 pub(super) fn plugin(app: &mut App) {
     load_shader_library!(app, "outline_common.wesl");
     embedded_asset!(app, "outline_init.wesl");
     embedded_asset!(app, "outline_jumpflood.wesl");
     embedded_asset!(app, "outline_draw.wesl");
+    embedded_asset!(app, "outline_mesh.wesl");
 
     app.add_plugins(ExtractResourcePlugin::<OutlineConfig, RenderApp>::default());
 

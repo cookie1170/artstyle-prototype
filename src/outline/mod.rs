@@ -146,6 +146,14 @@ struct OutlineCameraOf(pub Entity);
 #[relationship_target(relationship = OutlineCameraOf)]
 struct WithOutlineCamera(Entity);
 
+/// The [`Image`] that outline IDs will be rendered to by the [outline camera](OutlineCameraOf)
+#[derive(Component, Reflect, PartialEq, Debug, Default, Clone)]
+#[reflect(Component, Default)]
+struct OutlineRenderTarget {
+    handle: Handle<Image>,
+    last_size: UVec2,
+}
+
 fn on_camera_added(
     ev: On<Add<Camera>>,
     cam: Query<&Projection, Without<OutlineCameraOf>>,
@@ -155,21 +163,69 @@ fn on_camera_added(
     cmd.spawn((
         Camera3d::default(),
         Camera {
-            order: -1,
+            msaa_writeback: MsaaWriteback::Off,
+            clear_color: ClearColorConfig::Custom(Color::LinearRgba(LinearRgba::from_u8_array(
+                [0; 4],
+            ))),
             ..default()
+        },
+        // this is temporarily set to `None` because we don't know the size of the camera yet
+        // (it hasn't been computed when the camera is added!), so we can't create an image for it
+        RenderTarget::None {
+            size: uvec2(1920, 1080),
         },
         projection.clone(),
         OutlineCameraOf(ev.entity),
         ChildOf(ev.entity),
+        Msaa::Off,
+        OUTLINE_LAYER.clone(),
     ));
 }
 
 fn update_outline_cameras(
-    changed: Query<(&Projection, &WithOutlineCamera), Or<(Changed<Camera>, Changed<Projection>)>>,
-    mut outline_cameras: Query<&mut Projection, Without<WithOutlineCamera>>,
+    changed: Query<
+        (
+            Entity,
+            &Projection,
+            &Camera,
+            Option<&mut OutlineRenderTarget>,
+            &WithOutlineCamera,
+        ),
+        Or<(Changed<Camera>, Changed<Projection>)>,
+    >,
+    mut outline_cameras: Query<(&mut Projection, &mut RenderTarget), Without<WithOutlineCamera>>,
+    mut images: ResMut<Assets<Image>>,
+    mut cmd: Commands,
 ) {
-    for (projection, outline_camera) in changed {
-        let mut outline_projection = cq!(outline_cameras.get_mut(**outline_camera));
+    for (entity, projection, camera, outline_target, outline_camera) in changed {
+        let size = cq!(camera.physical_target_size());
+        let (mut outline_projection, mut target) = cq!(outline_cameras.get_mut(**outline_camera));
+        if outline_target.is_none_or(|t| t.last_size != size) {
+            debug!("creating outline render target");
+            let mut image = Image::new_uninit(
+                Extent3d {
+                    width: size.x as u32,
+                    height: size.y as u32,
+                    depth_or_array_layers: 1,
+                },
+                TextureDimension::D2,
+                // `Rgba8Uint` here would make more sense, however, the mesh pipeline only supports float formats.
+                // so in the shader we use the packing functions to convert them to and from u32s
+                TextureFormat::Rgba8Unorm,
+                RenderAssetUsages::RENDER_WORLD,
+            );
+            image.texture_descriptor.usage |= TextureUsages::RENDER_ATTACHMENT;
+            let handle = images.add(image);
+            let new_target = OutlineRenderTarget {
+                handle: handle.clone(),
+                last_size: size,
+            };
+            cmd.entity(entity).insert(new_target);
+            *target = RenderTarget::Image(ImageRenderTarget {
+                handle,
+                scale_factor: 1.0,
+            });
+        }
         *outline_projection = projection.clone();
     }
 }
@@ -212,6 +268,11 @@ pub(super) fn plugin(app: &mut App) {
 
 use crate::{outline::render::OutlineMaterial, prelude::*};
 use bevy::{
-    camera::visibility::RenderLayers,
-    render::{RenderApp, extract_resource::ExtractResource},
+    asset::RenderAssetUsages,
+    camera::{ImageRenderTarget, RenderTarget, visibility::RenderLayers},
+    render::{
+        RenderApp,
+        extract_resource::ExtractResource,
+        render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
+    },
 };

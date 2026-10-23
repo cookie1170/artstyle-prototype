@@ -38,7 +38,7 @@ fn render_outline(
         .render_device()
         .create_buffer_with_data(&BufferInitDescriptor {
             label: Some("step_width_buffer"),
-            contents: &[size.width.to_ne_bytes(), size.height.to_ne_bytes()].concat(),
+            contents: bytemuck::cast_slice(&[size.width, size.height]),
             usage: BufferUsages::UNIFORM,
         });
 
@@ -85,7 +85,7 @@ fn render_outline(
             .render_device()
             .create_buffer_with_data(&BufferInitDescriptor {
                 label: Some("step_width_buffer"),
-                contents: &2u32.pow(i).to_ne_bytes(),
+                contents: bytemuck::bytes_of(&2u32.pow(i)),
                 usage: BufferUsages::UNIFORM,
             });
 

@@ -147,8 +147,9 @@ struct OutlineCameraOf(pub Entity);
 struct WithOutlineCamera(Entity);
 
 /// The [`Image`] that outline IDs will be rendered to by the [outline camera](OutlineCameraOf)
-#[derive(Component, Reflect, PartialEq, Debug, Default, Clone)]
+#[derive(Component, ExtractComponent, Reflect, PartialEq, Debug, Default, Clone)]
 #[reflect(Component, Default)]
+#[extract_app(RenderApp)]
 struct OutlineRenderTarget {
     handle: Handle<Image>,
     last_size: UVec2,
@@ -272,6 +273,7 @@ use bevy::{
     camera::{ImageRenderTarget, RenderTarget, visibility::RenderLayers},
     render::{
         RenderApp,
+        extract_component::ExtractComponent,
         extract_resource::ExtractResource,
         render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
     },

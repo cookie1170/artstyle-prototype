@@ -1,11 +1,11 @@
 fn render_outline(
-    view: ViewQuery<(&ViewTarget, &ViewDepthStencilTexture)>,
+    view: ViewQuery<(&ViewTarget, &ViewDepthStencilTexture, &OutlineRenderTarget)>,
     pipelines: If<Res<OutlinePipelines>>,
     pipeline_cache: Res<PipelineCache>,
+    images: Res<RenderAssets<GpuImage>>,
     mut ctx: RenderContext,
 ) -> Result {
-    return Ok(());
-    let (view_target, view_depth) = view.into_inner();
+    let (view_target, view_depth, outline_render_target) = view.into_inner();
     let layout = &pipeline_cache.get_bind_group_layout(&pipelines.init.layout);
     let desc_a = TextureDescriptor {
         label: Some("outline_a"),
@@ -166,7 +166,6 @@ fn init_outline_pipeline(
     cache: ResMut<PipelineCache>,
     mut cmd: Commands,
 ) {
-    return;
     let init = {
         let entries = BindGroupLayoutEntries::single(
             ShaderStages::FRAGMENT,
@@ -298,7 +297,10 @@ pub(super) fn plugin(app: &mut App) {
     embedded_asset!(app, "outline_draw.wesl");
     embedded_asset!(app, "outline_mesh.wesl");
 
-    app.add_plugins(ExtractResourcePlugin::<OutlineConfig, RenderApp>::default());
+    app.add_plugins((
+        ExtractResourcePlugin::<OutlineConfig, RenderApp>::default(),
+        ExtractComponentPlugin::<OutlineRenderTarget, RenderApp>::default(),
+    ));
 
     let render_app = app.sub_app_mut(RenderApp);
     render_app
@@ -313,12 +315,13 @@ use super::OutlineConfig;
 use bevy::{
     asset::load_embedded_asset,
     core_pipeline::{Core3d, Core3dSystems, FullscreenShader},
-    extract::extract_resource::ExtractResourcePlugin,
+    extract::{extract_component::ExtractComponentPlugin, extract_resource::ExtractResourcePlugin},
     material::descriptor::{
         BindGroupLayoutDescriptor, CachedRenderPipelineId, FragmentState, RenderPipelineDescriptor,
     },
     render::{
         RenderApp, RenderStartup,
+        render_asset::RenderAssets,
         render_resource::{
             BindGroupEntries, BindGroupLayoutEntries, BufferBinding, BufferInitDescriptor,
             BufferUsages, ColorTargetState, ColorWrites, Operations, PipelineCache,
@@ -328,9 +331,10 @@ use bevy::{
             binding_types::{texture_2d, uniform_buffer},
         },
         renderer::{RenderContext, ViewQuery},
+        texture::GpuImage,
         view::{ViewDepthStencilTexture, ViewTarget},
     },
     shader::load_shader_library,
 };
 
-use crate::prelude::*;
+use crate::{outline::OutlineRenderTarget, prelude::*};

@@ -277,6 +277,14 @@ fn init_outline_pipeline(
     });
 }
 
+#[derive(AsBindGroup, Asset, Reflect, PartialEq, Debug, Clone)]
+pub struct OutlineMaterial {
+    #[uniform(0)]
+    pub id: u32,
+}
+
+impl Material for OutlineMaterial {}
+
 pub(super) fn plugin(app: &mut App) {
     load_shader_library!(app, "outline_common.wesl");
     embedded_asset!(app, "outline_init.wesl");

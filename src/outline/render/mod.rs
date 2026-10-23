@@ -1,12 +1,11 @@
 fn render_outline(
-    view: ViewQuery<(&ViewTarget, &ViewDepthStencilTexture, &OutlineRenderTarget)>,
+    view: ViewQuery<(&ViewTarget, &OutlineRenderTarget)>,
     pipelines: If<Res<OutlinePipelines>>,
     pipeline_cache: Res<PipelineCache>,
     images: Res<RenderAssets<GpuImage>>,
     mut ctx: RenderContext,
 ) -> Result {
-    let (view_target, view_depth, outline_render_target) = view.into_inner();
-    let layout = &pipeline_cache.get_bind_group_layout(&pipelines.init.layout);
+    let (view_target, outline_render_target) = view.into_inner();
     let desc_a = TextureDescriptor {
         label: Some("outline_a"),
         size: view_target.main_texture().size(),
@@ -32,18 +31,27 @@ fn render_outline(
         ..default()
     });
 
-    let entries = BindGroupEntries::single(
-        view_depth
-            .attachment
-            .depth_stencil_views()
-            .attachment_view(),
-    )
+    let size = view_target.main_texture().size();
+
+    let layout = &pipeline_cache.get_bind_group_layout(&pipelines.init.layout);
+    let uniform_buffer = ctx
+        .render_device()
+        .create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("step_width_buffer"),
+            contents: &[size.width.to_ne_bytes(), size.height.to_ne_bytes()].concat(),
+            usage: BufferUsages::UNIFORM,
+        });
+
+    let entries = BindGroupEntries::single(BufferBinding {
+        buffer: &uniform_buffer,
+        offset: 0,
+        size: None,
+    })
     .to_vec();
 
     let bind_group =
         ctx.render_device()
-            .create_bind_group(OutlineConfig::label(), layout, &entries);
-
+            .create_bind_group("outline_init_bind_group", layout, &entries);
     let mut init_pass = ctx
         .command_encoder()
         .begin_render_pass(&RenderPassDescriptor {
@@ -70,6 +78,7 @@ fn render_outline(
     const STEPS: u32 = 2;
     let mut read_buffer = &texture_a_view;
     let mut write_buffer = &texture_b_view;
+    let outline_ids = rq!(Ok(()), images.get(&outline_render_target.handle));
     for i in (0..STEPS).rev() {
         let layout = &pipeline_cache.get_bind_group_layout(&pipelines.jumpflood.layout);
         let uniform_buffer = ctx
@@ -82,6 +91,7 @@ fn render_outline(
 
         let entries = BindGroupEntries::sequential((
             read_buffer,
+            &outline_ids.texture_view,
             BufferBinding {
                 buffer: &uniform_buffer,
                 offset: 0,
@@ -92,7 +102,7 @@ fn render_outline(
 
         let bind_group =
             ctx.render_device()
-                .create_bind_group(OutlineConfig::label(), layout, &entries);
+                .create_bind_group("outline_jumpflood_bind_group", layout, &entries);
         let mut jumpflood_pass = ctx
             .command_encoder()
             .begin_render_pass(&RenderPassDescriptor {
@@ -122,7 +132,7 @@ fn render_outline(
 
     let bind_group =
         ctx.render_device()
-            .create_bind_group(OutlineConfig::label(), layout, &entries);
+            .create_bind_group("outline_draw_bind_group", layout, &entries);
 
     let mut draw_pass = ctx
         .command_encoder()
@@ -167,14 +177,12 @@ fn init_outline_pipeline(
     mut cmd: Commands,
 ) {
     let init = {
-        let entries = BindGroupLayoutEntries::single(
-            ShaderStages::FRAGMENT,
-            texture_2d(TextureSampleType::Depth),
-        )
-        .to_vec();
+        let entries =
+            BindGroupLayoutEntries::single(ShaderStages::FRAGMENT, uniform_buffer::<UVec2>(false))
+                .to_vec();
 
         let layout = BindGroupLayoutDescriptor {
-            label: OutlineConfig::label().into(),
+            label: "outline_init_bind_group_layout".into(),
             entries,
         };
 
@@ -195,7 +203,6 @@ fn init_outline_pipeline(
             }),
             ..default()
         });
-
         OutlinePipeline { layout, id }
     };
 
@@ -204,13 +211,14 @@ fn init_outline_pipeline(
             ShaderStages::FRAGMENT,
             (
                 texture_2d(TextureSampleType::Uint),
+                texture_2d(TextureSampleType::Float { filterable: false }),
                 uniform_buffer::<i32>(false),
             ),
         )
         .to_vec();
 
         let layout = BindGroupLayoutDescriptor {
-            label: OutlineConfig::label().into(),
+            label: "outline_jumpflood_bind_group_layout".into(),
             entries,
         };
 
@@ -246,7 +254,7 @@ fn init_outline_pipeline(
         .to_vec();
 
         let layout = BindGroupLayoutDescriptor {
-            label: OutlineConfig::label().into(),
+            label: "outline_draw_bind_group_layout".into(),
             entries,
         };
 
@@ -298,6 +306,7 @@ pub(super) fn plugin(app: &mut App) {
     embedded_asset!(app, "outline_mesh.wesl");
 
     app.add_plugins((
+        MaterialPlugin::<OutlineMaterial>::default(),
         ExtractResourcePlugin::<OutlineConfig, RenderApp>::default(),
         ExtractComponentPlugin::<OutlineRenderTarget, RenderApp>::default(),
     ));
@@ -332,7 +341,7 @@ use bevy::{
         },
         renderer::{RenderContext, ViewQuery},
         texture::GpuImage,
-        view::{ViewDepthStencilTexture, ViewTarget},
+        view::ViewTarget,
     },
     shader::load_shader_library,
 };

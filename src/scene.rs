@@ -14,6 +14,7 @@ fn setup(mut cmd: Commands) {
         }
         Mesh3d(asset_value(Cuboid::new(3.0, 3.0, 3.0)))
         MeshMaterial3d<StandardMaterial>(asset_value(StandardMaterial::default()))
+        Outline
         --
         #Ground
         Transform {
@@ -23,6 +24,7 @@ fn setup(mut cmd: Commands) {
         }
         Mesh3d(asset_value(Cuboid::new(16.0, 0.1, 16.0)))
         MeshMaterial3d<StandardMaterial>(asset_value(StandardMaterial::default()))
+        Outline
     });
 }
 
@@ -78,4 +80,4 @@ use bevy::{
     camera_controller::free_camera::{FreeCamera, FreeCameraPlugin},
 };
 
-use crate::prelude::*;
+use crate::{outline::Outline, prelude::*};

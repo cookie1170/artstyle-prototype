@@ -76,13 +76,12 @@ fn on_outline_id_added(
     mut cmd: Commands,
 ) {
     let id = rq!(id.get(ev.entity));
-    for child in children.iter_descendants(ev.entity) {
+    for child in std::iter::once(ev.entity).chain(children.iter_descendants(ev.entity)) {
         let mesh = cq!(meshes.get(child));
         cmd.spawn((
             mesh.clone(),
             MeshMaterial3d(id.material.clone()),
             UsesOutlineId(ev.entity),
-            ClearColor(Color::LinearRgba(LinearRgba::from_u8_array([0; 4]))),
             OUTLINE_LAYER.clone(),
             ChildOf(child),
             OutlineMeshOf(child),

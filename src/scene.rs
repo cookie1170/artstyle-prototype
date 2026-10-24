@@ -13,7 +13,10 @@ fn setup(mut cmd: Commands) {
             }
         }
         Mesh3d(asset_value(Cuboid::new(3.0, 3.0, 3.0)))
-        MeshMaterial3d<StandardMaterial>(asset_value(StandardMaterial::default()))
+        MeshMaterial3d<StandardMaterial>(asset_value(StandardMaterial {
+            base_color: palettes::css::BLUE.into(),
+            ..default()
+        }))
         Outline
         --
         #Ground
@@ -96,6 +99,7 @@ pub(super) fn plugin(app: &mut App) {
 use bevy::{
     camera::Hdr,
     camera_controller::free_camera::{FreeCamera, FreeCameraPlugin},
+    color::palettes,
     feathers::{
         FeathersPlugins, controls::FeathersSlider, dark_theme::create_dark_theme, theme::UiTheme,
     },

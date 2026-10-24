@@ -13,9 +13,11 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4f {
     let pos = uv_to_pos(in.uv, dim);
     let nearest = textureLoad(texture, pos, 0);
     let dist = distance(vec2f(nearest.xy), vec2f(pos));
+    let colour = textureLoad(screen_texture, pos, 0);
     if dist <= config.width && dist > 0.0 {
-        return vec4(0);
+        let other_colour = textureLoad(screen_texture, nearest.xy, 0);
+        return (colour + other_colour) / 2.0 * 0.05;
     } else {
-        return textureLoad(screen_texture, pos, 0);
+        return colour;
     }
 }

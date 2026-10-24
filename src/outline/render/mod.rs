@@ -336,7 +336,7 @@ impl OutlineConfig {
         if self.width < f32::EPSILON {
             return 0;
         }
-        u32::max(self.width.log2().ceil() as u32, 1)
+        self.width.log2().floor() as u32 + 1
     }
 }
 

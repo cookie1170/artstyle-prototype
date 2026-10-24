@@ -1,5 +1,5 @@
 import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput;
-import super::outline_common::uv_to_pos;
+import super::outline_common::{config, uv_to_pos};
 
 @group(0) @binding(0)
 var texture: texture_2d<u32>;
@@ -29,7 +29,8 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4u {
             let test_id = pack4x8unorm(textureLoad(ids, sample_pos, 0));
             let diff = pos - test_pos.rg;
             let sqr_dist = dot(diff, diff);
-            if id != test_id && sqr_dist < best_dist {
+            if id != test_id && sqr_dist < best_dist
+                && sqr_dist <= u32(ceil(config.width * config.width)) {
                 best_pos = test_pos;
                 best_dist = sqr_dist;
             }

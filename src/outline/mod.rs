@@ -4,10 +4,19 @@ mod render;
 const OUTLINE_LAYER: RenderLayers = RenderLayers::layer(15);
 
 /// Configures the outline rendering.
-#[derive(AsBindGroup, Resource, ExtractResource, Reflect, Default, PartialEq, Debug, Clone)]
+#[derive(AsBindGroup, Resource, ExtractResource, Reflect, PartialEq, Debug, Clone)]
 #[reflect(Resource)]
 #[extract_app(RenderApp)]
-pub struct OutlineConfig {}
+pub struct OutlineConfig {
+    #[uniform(3)]
+    pub width: f32,
+}
+
+impl Default for OutlineConfig {
+    fn default() -> Self {
+        Self { width: 4.0 }
+    }
+}
 
 /// Marks this entity and all its child entities as being outlined.
 ///

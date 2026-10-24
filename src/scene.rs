@@ -50,7 +50,9 @@ fn camera() -> impl Scene {
         #Camera
         Camera3d
         AtmosphereSettings
-        Smaa
+        Smaa {
+            preset: SmaaPreset::Ultra,
+        }
         Msaa::Off
 
         Hdr
@@ -94,6 +96,7 @@ pub(super) fn plugin(app: &mut App) {
 }
 
 use bevy::{
+    anti_alias::smaa::SmaaPreset,
     camera::Hdr,
     camera_controller::free_camera::{FreeCamera, FreeCameraPlugin},
     feathers::{

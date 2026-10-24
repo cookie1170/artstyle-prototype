@@ -46,11 +46,15 @@ fn render_outline(
             usage: BufferUsages::UNIFORM,
         });
 
-    let entries = BindGroupEntries::single(BufferBinding {
-        buffer: &uniform_buffer,
-        offset: 0,
-        size: None,
-    })
+    let outline_ids = rq!(Ok(()), images.get(&outline_render_target.handle));
+    let entries = BindGroupEntries::sequential((
+        &outline_ids.texture_view,
+        BufferBinding {
+            buffer: &uniform_buffer,
+            offset: 0,
+            size: None,
+        },
+    ))
     .to_vec();
 
     let bind_group =
@@ -82,7 +86,6 @@ fn render_outline(
     let steps = config.steps();
     let mut read_buffer = &texture_a_view;
     let mut write_buffer = &texture_b_view;
-    let outline_ids = rq!(Ok(()), images.get(&outline_render_target.handle));
     for i in (0..steps).rev() {
         let layout = &pipeline_cache.get_bind_group_layout(&pipelines.jumpflood.layout);
         let uniform_buffer = ctx
@@ -204,9 +207,14 @@ fn init_outline_pipeline(
     mut cmd: Commands,
 ) {
     let init = {
-        let entries =
-            BindGroupLayoutEntries::single(ShaderStages::FRAGMENT, uniform_buffer::<UVec2>(false))
-                .to_vec();
+        let entries = BindGroupLayoutEntries::sequential(
+            ShaderStages::FRAGMENT,
+            (
+                texture_2d(TextureSampleType::Float { filterable: false }),
+                uniform_buffer::<UVec2>(false),
+            ),
+        )
+        .to_vec();
 
         let layout = BindGroupLayoutDescriptor {
             label: "outline_init_bind_group_layout".into(),

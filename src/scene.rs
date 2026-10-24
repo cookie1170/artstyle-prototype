@@ -26,6 +26,23 @@ fn setup(mut cmd: Commands) {
         MeshMaterial3d<StandardMaterial>(asset_value(StandardMaterial::default()))
         Outline
     });
+
+    cmd.spawn_scene(bsn! {
+        @FeathersSlider {
+            @min: 1.0,
+            @max: 64.0
+        }
+        Node {
+            width: px(100),
+            margin: UiRect::all(px(4))
+        }
+        SliderValue(4.0)
+        SliderPrecision(0)
+        on(slider_self_update)
+        on(|ev: On<ValueChange<f32>>, mut config: ResMut<OutlineConfig>| {
+            config.width = ev.value;
+        })
+    });
 }
 
 fn camera() -> impl Scene {
@@ -71,13 +88,21 @@ fn light() -> impl Scene {
 }
 
 pub(super) fn plugin(app: &mut App) {
-    app.add_plugins(FreeCameraPlugin);
+    app.add_plugins((FreeCameraPlugin, FeathersPlugins))
+        .insert_resource(UiTheme(create_dark_theme()));
     app.add_systems(Startup, setup);
 }
 
 use bevy::{
     camera::Hdr,
     camera_controller::free_camera::{FreeCamera, FreeCameraPlugin},
+    feathers::{
+        FeathersPlugins, controls::FeathersSlider, dark_theme::create_dark_theme, theme::UiTheme,
+    },
+    ui_widgets::{SliderPrecision, SliderValue, ValueChange, slider_self_update},
 };
 
-use crate::{outline::Outline, prelude::*};
+use crate::{
+    outline::{Outline, OutlineConfig},
+    prelude::*,
+};

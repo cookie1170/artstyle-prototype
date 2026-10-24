@@ -2,7 +2,7 @@
 bevy = {
   version = "0.20",
   default-features = false,
-  features = ["3d", "free_camera"],
+  features = ["3d", "ui", "bevy_feathers", "free_camera"],
 }
 rand = "0.10"
 tiny_bail = "0.7.0"

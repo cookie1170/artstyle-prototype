@@ -1,5 +1,5 @@
 fn render_outline(
-    view: ViewQuery<(&ViewTarget, &OutlineRenderTarget)>,
+    view: ViewQuery<(&ViewTarget, &ViewDepthStencilTexture, &OutlineRenderTarget)>,
     pipelines: If<Res<OutlinePipelines>>,
     pipeline_cache: Res<PipelineCache>,
     images: Res<RenderAssets<GpuImage>>,
@@ -9,7 +9,7 @@ fn render_outline(
     mut param: SystemParamItem<<OutlineConfig as AsBindGroup>::Param>,
     mut ctx: RenderContext,
 ) -> Result {
-    let (view_target, outline_render_target) = view.into_inner();
+    let (view_target, depth, outline_render_target) = view.into_inner();
     let desc_a = TextureDescriptor {
         label: Some("outline_a"),
         size: view_target.main_texture().size(),
@@ -125,6 +125,7 @@ fn render_outline(
         let entries = BindGroupEntries::sequential((
             read_buffer,
             &outline_ids.texture_view,
+            depth.attachment.depth_stencil_views().attachment_view(),
             BufferBinding {
                 buffer: &uniform_buffer,
                 offset: 0,
@@ -255,6 +256,7 @@ fn init_outline_pipeline(
             (
                 texture_2d(TextureSampleType::Uint),
                 texture_2d(TextureSampleType::Float { filterable: false }),
+                texture_2d(TextureSampleType::Depth),
                 uniform_buffer::<i32>(false),
             ),
         )
@@ -398,7 +400,7 @@ use bevy::{
         renderer::{RenderContext, ViewQuery},
         storage::GpuShaderBuffer,
         texture::GpuImage,
-        view::ViewTarget,
+        view::{ViewDepthStencilTexture, ViewTarget},
     },
     shader::load_shader_library,
 };

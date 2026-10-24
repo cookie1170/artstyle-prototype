@@ -46,6 +46,33 @@ fn render_outline(
             usage: BufferUsages::UNIFORM,
         });
 
+    let config_layout = &pipeline_cache.get_bind_group_layout(&pipelines.config_layout);
+
+    let mut builder = BindGroupBuilder::default();
+    match config.build_bind_group(
+        config_layout,
+        ctx.render_device(),
+        &mut param,
+        false,
+        &mut builder,
+    ) {
+        Ok(()) => {}
+        Err(AsBindGroupError::RetryNextUpdate) => return Ok(()),
+        e => e.context("failed to build `OutlineConfig` bind group")?,
+    }
+
+    let entries = builder
+        .iter()
+        .map(|(binding, resource)| BindGroupEntry {
+            binding: *binding,
+            resource: resource.get_binding(&fallback_buffer, &shader_buffer_assets),
+        })
+        .collect::<Vec<_>>();
+
+    let config_bind_group =
+        ctx.render_device()
+            .create_bind_group("outline_config_bind_group", config_layout, &entries);
+
     let outline_ids = rq!(Ok(()), images.get(&outline_render_target.handle));
     let entries = BindGroupEntries::sequential((
         &outline_ids.texture_view,
@@ -54,8 +81,7 @@ fn render_outline(
             offset: 0,
             size: None,
         },
-    ))
-    .to_vec();
+    ));
 
     let bind_group =
         ctx.render_device()
@@ -96,7 +122,7 @@ fn render_outline(
                 usage: BufferUsages::UNIFORM,
             });
 
-        let mut entries = BindGroupEntries::sequential((
+        let entries = BindGroupEntries::sequential((
             read_buffer,
             &outline_ids.texture_view,
             BufferBinding {
@@ -104,20 +130,7 @@ fn render_outline(
                 offset: 0,
                 size: None,
             },
-        ))
-        .to_vec();
-
-        let mut builder = BindGroupBuilder::default();
-        match config.build_bind_group(layout, ctx.render_device(), &mut param, false, &mut builder)
-        {
-            Ok(()) => {}
-            Err(AsBindGroupError::RetryNextUpdate) => return Ok(()),
-            e => e.context("failed to build `OutlineConfig` bind group")?,
-        }
-        entries.extend(builder.iter().map(|(binding, resource)| BindGroupEntry {
-            binding: *binding,
-            resource: resource.get_binding(&fallback_buffer, &shader_buffer_assets),
-        }));
+        ));
 
         let bind_group =
             ctx.render_device()
@@ -140,6 +153,7 @@ fn render_outline(
         );
         jumpflood_pass.set_pipeline(pipeline);
         jumpflood_pass.set_bind_group(0, &bind_group, &[]);
+        jumpflood_pass.set_bind_group(1, &config_bind_group, &[]);
         jumpflood_pass.draw(0..3, 0..1);
         std::mem::swap(&mut read_buffer, &mut write_buffer);
     }
@@ -147,17 +161,7 @@ fn render_outline(
     let layout = &pipeline_cache.get_bind_group_layout(&pipelines.draw.layout);
 
     let write = view_target.post_process_write();
-    let mut entries = BindGroupEntries::sequential((read_buffer, write.source)).to_vec();
-    let mut builder = BindGroupBuilder::default();
-    match config.build_bind_group(layout, ctx.render_device(), &mut param, false, &mut builder) {
-        Ok(()) => {}
-        Err(AsBindGroupError::RetryNextUpdate) => return Ok(()),
-        e => e.context("failed to build `OutlineConfig` bind group")?,
-    }
-    entries.extend(builder.iter().map(|(binding, resource)| BindGroupEntry {
-        binding: *binding,
-        resource: resource.get_binding(&fallback_buffer, &shader_buffer_assets),
-    }));
+    let entries = BindGroupEntries::sequential((read_buffer, write.source));
 
     let bind_group =
         ctx.render_device()
@@ -181,6 +185,7 @@ fn render_outline(
     );
     draw_pass.set_pipeline(pipeline);
     draw_pass.set_bind_group(0, &bind_group, &[]);
+    draw_pass.set_bind_group(1, &config_bind_group, &[]);
     draw_pass.draw(0..3, 0..1);
 
     Ok(())
@@ -191,6 +196,7 @@ struct OutlinePipelines {
     init: OutlinePipeline,
     jumpflood: OutlinePipeline,
     draw: OutlinePipeline,
+    config_layout: BindGroupLayoutDescriptor,
 }
 
 #[derive(Debug, Clone)]
@@ -206,6 +212,8 @@ fn init_outline_pipeline(
     ctx: RenderContext,
     mut cmd: Commands,
 ) {
+    let config_layout = OutlineConfig::bind_group_layout_descriptor(ctx.render_device());
+
     let init = {
         let entries = BindGroupLayoutEntries::sequential(
             ShaderStages::FRAGMENT,
@@ -252,11 +260,6 @@ fn init_outline_pipeline(
         )
         .to_vec();
 
-        let entries = combined_bind_group::combine_bind_group_layout_entries(
-            OutlineConfig::bind_group_layout_entries(ctx.render_device(), false),
-            entries,
-        );
-
         let layout = BindGroupLayoutDescriptor {
             label: "outline_jumpflood_bind_group_layout".into(),
             entries,
@@ -266,7 +269,7 @@ fn init_outline_pipeline(
         let vertex = fullscreen_shader.to_vertex_state();
         let id = cache.queue_render_pipeline(RenderPipelineDescriptor {
             label: Some("outline_jumpflood_pipeline".into()),
-            layout: vec![layout.clone()],
+            layout: vec![layout.clone(), config_layout.clone()],
             vertex,
             fragment: Some(FragmentState {
                 shader,
@@ -292,10 +295,6 @@ fn init_outline_pipeline(
             ),
         )
         .to_vec();
-        let entries = combined_bind_group::combine_bind_group_layout_entries(
-            OutlineConfig::bind_group_layout_entries(ctx.render_device(), false),
-            entries,
-        );
 
         let layout = BindGroupLayoutDescriptor {
             label: "outline_draw_bind_group_layout".into(),
@@ -306,7 +305,7 @@ fn init_outline_pipeline(
         let vertex = fullscreen_shader.to_vertex_state();
         let id = cache.queue_render_pipeline(RenderPipelineDescriptor {
             label: Some("outline_draw_pipeline".into()),
-            layout: vec![layout.clone()],
+            layout: vec![layout.clone(), config_layout.clone()],
             vertex,
             fragment: Some(FragmentState {
                 shader,
@@ -327,6 +326,7 @@ fn init_outline_pipeline(
         init,
         jumpflood,
         draw,
+        config_layout,
     });
 }
 
@@ -336,7 +336,7 @@ impl OutlineConfig {
         if self.width < f32::EPSILON {
             return 0;
         }
-        u32::max(self.width.log2().ceil() as u32, 1)
+        self.width.log2().floor() as u32 + 1
     }
 }
 
@@ -384,7 +384,7 @@ use bevy::{
         BindGroupLayoutDescriptor, CachedRenderPipelineId, FragmentState, RenderPipelineDescriptor,
     },
     render::{
-        RenderApp, RenderStartup, combined_bind_group,
+        RenderApp, RenderStartup,
         material_bind_groups::FallbackBuffer,
         render_asset::RenderAssets,
         render_resource::{

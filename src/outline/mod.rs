@@ -8,7 +8,7 @@ const OUTLINE_LAYER: RenderLayers = RenderLayers::layer(15);
 #[reflect(Resource)]
 #[extract_app(RenderApp)]
 pub struct OutlineConfig {
-    #[uniform(3)]
+    #[uniform(0)]
     pub width: f32,
 }
 
@@ -211,7 +211,6 @@ fn update_outline_cameras(
         let size = cq!(camera.physical_target_size());
         let (mut outline_projection, mut target) = cq!(outline_cameras.get_mut(**outline_camera));
         if outline_target.is_none_or(|t| t.last_size != size) {
-            debug!("creating outline render target");
             let mut image = Image::new_uninit(
                 Extent3d {
                     width: size.x as u32,

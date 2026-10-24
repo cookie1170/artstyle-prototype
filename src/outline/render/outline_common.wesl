@@ -2,7 +2,7 @@ struct OutlineConfig {
     width: f32,
 }
 
-@group(0) @binding(3)
+@group(1) @binding(0)
 var<uniform> config: OutlineConfig;
 
 fn uv_to_pos(uv: vec2f, dim: vec2u) -> vec2u {
